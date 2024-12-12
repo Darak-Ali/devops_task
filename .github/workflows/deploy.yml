@@ -1,36 +1,71 @@
-name: Deploy React App to EC2
+name: Deploy React App to EC2 with PM2
 
 on:
   push:
     branches:
-      - main  
+      - main  # Trigger on changes to the main branch
 
 jobs:
-  build_and_deploy:
-    runs-on: ubuntu-latest 
+  deploy:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3  
+      - name: Checkout repository
+        uses: actions/checkout@v2
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v2
         with:
-          node-version: '16'  
+          node-version: '14'
 
-      - name: Install Dependencies
-        run: npm install  
-
-      - name: Build project
-        run: CI=false npm run build  
-
-      - name: Deploy to EC2
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}  # Add your SSH private key to GitHub secrets
-          EC2_USER: ubuntu  # The default user for EC2 Ubuntu instances
-          EC2_HOST: 13.61.8.57  # Replace with your EC2 public IP
+      - name: Install dependencies
         run: |
-          echo "$SSH_PRIVATE_KEY" > mykey.pem  # Write private key to file
-          chmod 600 mykey.pem  # Set proper permissions for the private key
-          scp -i mykey.pem -r build/* $EC2_USER@$EC2_HOST:/var/www/my-react-app/devops_task/build  # Copy build files to EC2
-          ssh -i mykey.pem $EC2_USER@$EC2_HOST 'sudo systemctl restart nginx'  # Restart Nginx to apply changes
+          npm install
+
+      - name: Run tests (optional)
+        run: npm test -- --coverage
+
+      - name: Build the React app
+        run: CI=false npm run build
+
+      - name: Upload build to EC2 server
+        uses: appleboy/ssh-action@v0.1.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            # Change directory to where you want to deploy
+            cd /home/ubuntu/my-react-app
+
+            # Pull the latest changes from GitHub
+            git pull origin main
+
+            # Install dependencies on the EC2 instance (if necessary)
+            npm install
+
+            # Remove the old build folder (optional, if you want to clear it)
+            rm -rf build/
+
+            # Copy the new build folder from GitHub Actions to the EC2 instance
+            scp -r ./build/* /home/ubuntu/my-react-app/devops_task/build/
+
+            # Install pm2 globally if not installed
+            npm install pm2 -g
+
+            # Stop any previous running pm2 processes
+            pm2 stop my-react-app || true
+
+            # Start the React app with pm2
+            pm2 serve /home/ubuntu/my-react-app/build --name "my-react-app" --spa
+
+            # Save pm2 process list
+            pm2 save
+
+            # Ensure pm2 restarts after a system reboot (optional)
+            pm2 startup
+
+      - name: Clean up 
+        run: |
+          rm -rf build/
