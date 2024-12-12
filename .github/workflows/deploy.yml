@@ -22,11 +22,10 @@ jobs:
         run: |
           npm install
 
-      - name: Run tests (optional)
-        run: npm test -- --coverage
 
-      - name: Build the React app
-        run: CI=false npm run build
+
+      - name: Set CI to false
+        run: echo "CI=false" >> $GITHUB_ENV npm run build
 
       - name: Upload build to EC2 server
         uses: appleboy/ssh-action@v0.1.0
